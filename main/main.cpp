@@ -7,6 +7,7 @@
 
 #include "wifi.h"
 #include "mqtt.h"
+#include "mqtt_custom.h"
 
 static const std::string ssid = "lilinng";
 static const std::string password = "WYX103729";
@@ -36,8 +37,12 @@ extern "C" void app_main(void)
     memset(&mqtt_cfg, 0, sizeof(mqtt_cfg));
     mqtt_cfg.broker.address.uri = "mqtt://47.113.149.47:1883";
     mqtt_cfg.credentials.client_id = "esp32-node";  // 自身id
+    mqtt_cfg.credentials.username = "esp32-1";
+    mqtt_cfg.credentials.authentication.password = "esp32-1";
     mqtt client;
+    mqtt_app_start(client);                    // 建队列/任务 + 注册消息回调（app 层）
     client.easy_start(mqtt_cfg);
+    client.subscribe("home/room1/device1/cmd", 1);   // 订阅下行主题（进集合，连上后自动补订）
 
     while(1)
     {
