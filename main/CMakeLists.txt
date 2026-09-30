@@ -6,7 +6,7 @@ idf_component_register(SRCS "main.cpp"
 # cd 到 www 目录执行，符号名才是干净的 _binary_index_html_start/_end
 add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/index_html.o
-    COMMAND ${CMAKE_LINKER} -r -b binary index.html -o ${CMAKE_CURRENT_BINARY_DIR}/index_html.o
+    COMMAND ${CMAKE_LINKER} -r --no-relax -b binary index.html -o ${CMAKE_CURRENT_BINARY_DIR}/index_html.o
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/www
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/www/index.html
     COMMENT "Embedding index.html via ld -r -b binary")
