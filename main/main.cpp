@@ -20,6 +20,10 @@ static bool enter_ap = false;
 static const std::string ssid = "esp32";
 static const std::string password = "esp32-lilinng";
 
+// ld -r -b binary 生成的符号
+extern const unsigned char _binary_index_html_start[];
+extern const unsigned char _binary_index_html_end[];
+
 // 配网页面 + 保存（同一个 "/"，GET 带 ?ssid=..&pass=.. 就当提交）
 static esp_err_t config_page_handler(httpd_req_t *req)
 {
@@ -44,16 +48,10 @@ static esp_err_t config_page_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
-    const char *html =
-        "<html><body>"
-        "<h3>ESP32 配网</h3>"
-        "<form method=\"get\" action=\"/\">"
-        "WiFi: <input name=\"ssid\"><br><br>"
-        "密码: <input name=\"pass\"><br><br>"
-        "<button>保存</button>"
-        "</form></body></html>";
+    // GET 无查询串 → 发 ld -r -b binary 嵌进来的 index.html
     httpd_resp_set_type(req, "text/html");
-    httpd_resp_send(req, html, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send(req, (const char *)_binary_index_html_start,
+                    _binary_index_html_end - _binary_index_html_start);
     return ESP_OK;
 }
 
