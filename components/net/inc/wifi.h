@@ -27,3 +27,24 @@ private:
     wifi_config_t wifi_cfg_ = {};
     bool is_change = false;
 };
+
+using ap_cb_t = void(*)(void*, esp_event_base_t, int32_t, void*);
+
+class wifi_ap
+{
+public:
+    void easy_start(wifi_config_t &wifi_cfg);
+    void init(wifi_config_t &wifi_cfg, ap_cb_t cb);
+    void start(void);
+    void set_init_cfg(wifi_init_config_t &cfg)
+    {
+        cfg_ = cfg;
+        is_change = true;
+    }
+private:
+    static void WIFI_AP_CallBack(void *event_handler_arg,esp_event_base_t event_base,int32_t event_id,void *event_data);
+    sta_cb_t cb_;
+    wifi_init_config_t cfg_ = {};
+    wifi_config_t wifi_cfg_ = {};
+    bool is_change = false;
+};
