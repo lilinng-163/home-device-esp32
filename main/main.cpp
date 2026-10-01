@@ -6,6 +6,8 @@
 #include <freertos/task.h>
 #include <nvs_flash.h>
 #include <esp_log.h>
+#include <vector>
+#include <cJSON.h>
 
 #include "key.h"
 #include "wifi.h"
@@ -17,38 +19,56 @@ static const char *TAG = "app";
 
 static bool enter_ap = false;
 
-static const std::string ssid = "esp32";
-static const std::string password = "esp32-lilinng";
+// AP 模式的默认热点（与 NVS 里的 STA 配置无关）
+static const std::string ap_ssid = "esp32";
+static const std::string ap_pass = "esp32-lilinng";
 
-// ld -r -b binary 生成的符号
+// 主题：存字符串（不要存 cJSON*，那棵树会被 cJSON_Delete 释放）
+static std::vector<std::string> publish_set;
+static std::vector<std::string> subscribe_set;
+
+// objcopy 生成的符号
 extern const unsigned char _binary_index_html_start[];
 extern const unsigned char _binary_index_html_end[];
 
-// 配网页面 + 保存（同一个 "/"，GET 带 ?ssid=..&pass=.. 就当提交）
+// "/" 同时处理 GET（发页面）与 POST（收配置 JSON）
 static esp_err_t config_page_handler(httpd_req_t *req)
 {
-    if (httpd_req_get_url_query_len(req) > 0)
+    if (req->method == HTTP_POST)
     {
-        char query[256] = {};
-        char new_ssid[64] = {};
-        char new_pass[64] = {};
-        httpd_req_get_url_query_str(req, query, sizeof(query));
-        httpd_query_key_value(query, "ssid", new_ssid, sizeof(new_ssid));
-        httpd_query_key_value(query, "pass", new_pass, sizeof(new_pass));
+        char buf[2048];
+        int total = req->content_len;
+        if (total >= (int)sizeof(buf)) total = sizeof(buf) - 1;
 
-        ESP_LOGI(TAG, "got ssid=%s pass=%s", new_ssid, new_pass);
+        int got = 0;
+        while (got < total)
+        {
+            int r = httpd_req_recv(req, buf + got, total - got);
+            if (r <= 0)                     // 出错/超时
+            {
+                httpd_resp_send_500(req);
+                return ESP_FAIL;
+            }
+            got += r;
+        }
+        buf[got] = '\0';
 
-        // 把收到的值回显到网页上（看现象用）
-        char page[256];
-        snprintf(page, sizeof(page),
-                 "<html><body><h3>recv</h3>ssid=%s<br>pass=%s</body></html>",
-                 new_ssid, new_pass);
-        httpd_resp_set_type(req, "text/html");
-        httpd_resp_send(req, page, HTTPD_RESP_USE_STRLEN);
+        nvs_handle_t h;
+        if (nvs_open("cfg", NVS_READWRITE, &h) == ESP_OK)
+        {
+            nvs_set_str(h, "json", buf);
+            nvs_commit(h);
+            nvs_close(h);
+        }
+
+        ESP_LOGI(TAG, "config: %s", buf);    // 看现象：把配置打印出来
+
+        httpd_resp_set_type(req, "text/plain");
+        httpd_resp_send(req, "ok", HTTPD_RESP_USE_STRLEN);
         return ESP_OK;
     }
 
-    // GET 无查询串 → 发 ld -r -b binary 嵌进来的 index.html
+    // GET → 发 objcopy 嵌进来的 index.html
     httpd_resp_set_type(req, "text/html");
     httpd_resp_send(req, (const char *)_binary_index_html_start,
                     _binary_index_html_end - _binary_index_html_start);
@@ -65,7 +85,7 @@ extern "C" void app_main(void)
     }
     ESP_ERROR_CHECK(ret);
 
-    // 开机按键判断是否ap 延时2秒判断key状态
+    // 开机按键判断是否 ap：延时 2 秒后再判一次
     gpio_config_t cfg;
     memset(&cfg, 0, sizeof(cfg));
     cfg.mode = GPIO_MODE_INPUT;
@@ -82,53 +102,132 @@ extern "C" void app_main(void)
         }
     }
 
-    if(enter_ap)    // 配置模式
+    if(enter_ap)    // 配置模式：起热点 + https 配网页
     {
-        wifi_ap wifi;
+        static wifi_ap wifi;
         wifi_config_t wifi_cfg;
         memset(&wifi_cfg, 0, sizeof(wifi_cfg));
-        memcpy(wifi_cfg.ap.ssid, ssid.c_str(), ssid.size());
-        wifi_cfg.ap.ssid_len = strlen(ssid.c_str());
+        memcpy(wifi_cfg.ap.ssid, ap_ssid.c_str(), ap_ssid.size());
+        wifi_cfg.ap.ssid_len = strlen(ap_ssid.c_str());
         wifi_cfg.ap.channel = 1;
-        memcpy(wifi_cfg.ap.password, password.c_str(), password.size());
+        memcpy(wifi_cfg.ap.password, ap_pass.c_str(), ap_pass.size());
         wifi_cfg.ap.max_connection = 5;
         wifi_cfg.ap.authmode = WIFI_AUTH_WPA2_PSK;
 
         wifi.easy_start(wifi_cfg);
 
-        // ★ 起 https 配网服务
         static httpd_uri_t root = {};
         root.uri = "/";
-        root.method = HTTP_GET;
+        root.method = (httpd_method_t)HTTP_ANY;
         root.handler = config_page_handler;
 
-        https_server srv;
+        static https_server srv;
         srv.init(root, nullptr, nullptr);
         ESP_LOGI(TAG, "https config server on https://192.168.4.1/");
     }
-    else    // normal entry
+    else    // normal entry：从 NVS 读配置，连 STA + MQTT
     {
-        // wifi_sta
-        wifi_sta wifi;
+        static wifi_sta wifi;
         wifi_config_t wifi_cfg;
         memset(&wifi_cfg, 0, sizeof(wifi_cfg));
-        memcpy(wifi_cfg.sta.ssid, ssid.c_str(), ssid.size());
-        memcpy(wifi_cfg.sta.password, password.c_str(), password.size());
+
+        static mqtt client;
+        esp_mqtt_client_config_t mqtt_cfg;
+        memset(&mqtt_cfg, 0, sizeof(mqtt_cfg));
+
+        // 这些 std::string 要活到 client.easy_start()，所以放在本作用域
+        std::string s_uri, s_cid, s_user, s_pass;
+
+        nvs_handle_t h;
+        if(nvs_open("cfg", NVS_READONLY, &h) == ESP_OK)
+        {
+            size_t len = 0;
+            if(nvs_get_str(h, "json", nullptr, &len) == ESP_OK)
+            {
+                char *json = new char[len];
+                nvs_get_str(h, "json", json, &len);
+
+                cJSON *root = cJSON_Parse(json);
+                if(root)
+                {
+                    cJSON *wifi = cJSON_GetObjectItem(root, "wifi");
+                    cJSON *mqtt = cJSON_GetObjectItem(root, "mqtt");
+                    cJSON *publish = cJSON_GetObjectItem(root, "publish");
+                    cJSON *subscribe = cJSON_GetObjectItem(root, "subscribe");
+
+                    if(cJSON_IsObject(wifi))
+                    {
+                        cJSON *ssid = cJSON_GetObjectItem(wifi, "ssid");
+                        cJSON *pass = cJSON_GetObjectItem(wifi, "pass");
+                        if(cJSON_IsString(ssid))
+                            snprintf((char*)wifi_cfg.sta.ssid, sizeof(wifi_cfg.sta.ssid),
+                                     "%s", ssid->valuestring);
+                        if(cJSON_IsString(pass))
+                            snprintf((char*)wifi_cfg.sta.password, sizeof(wifi_cfg.sta.password),
+                                     "%s", pass->valuestring);
+                    }
+
+                    if(cJSON_IsObject(mqtt))
+                    {
+                        cJSON *host = cJSON_GetObjectItem(mqtt, "host");
+                        cJSON *port = cJSON_GetObjectItem(mqtt, "port");
+                        cJSON *cid  = cJSON_GetObjectItem(mqtt, "client_id");
+                        cJSON *user = cJSON_GetObjectItem(mqtt, "username");
+                        cJSON *pw   = cJSON_GetObjectItem(mqtt, "password");
+
+                        if(cJSON_IsString(cid))  s_cid  = cid->valuestring;
+                        if(cJSON_IsString(user)) s_user = user->valuestring;
+                        if(cJSON_IsString(pw))   s_pass = pw->valuestring;
+                        if(cJSON_IsString(host))
+                        {
+                            int p = cJSON_IsNumber(port) ? port->valueint : 1883;
+                            s_uri = "mqtt://" + std::string(host->valuestring)
+                                    + ":" + std::to_string(p);
+                        }
+                    }
+
+                    if(cJSON_IsArray(publish))
+                    {
+                        int n = cJSON_GetArraySize(publish);
+                        for(int i = 0; i < n; i++)
+                        {
+                            cJSON *e = cJSON_GetArrayItem(publish, i);
+                            if(cJSON_IsString(e)) publish_set.push_back(e->valuestring);
+                        }
+                    }
+                    if(cJSON_IsArray(subscribe))
+                    {
+                        int n = cJSON_GetArraySize(subscribe);
+                        for(int i = 0; i < n; i++)
+                        {
+                            cJSON *e = cJSON_GetArrayItem(subscribe, i);
+                            if(cJSON_IsString(e))
+                            {
+                                subscribe_set.push_back(e->valuestring);
+                                client.subscribe(e->valuestring, 1);   // subscribe 会拷贝主题
+                            }
+                        }
+                    }
+
+                    cJSON_Delete(root);   // 值都已拷进 wifi_cfg / s_* / vector
+                }
+                delete[] json;
+            }
+            nvs_close(h);
+        }
+
+        // 此时 s_* 仍存活，交给 mqtt_cfg
+        if(!s_uri.empty())  mqtt_cfg.broker.address.uri = s_uri.c_str();
+        if(!s_cid.empty())  mqtt_cfg.credentials.client_id = s_cid.c_str();
+        if(!s_user.empty()) mqtt_cfg.credentials.username = s_user.c_str();
+        if(!s_pass.empty()) mqtt_cfg.credentials.authentication.password = s_pass.c_str();
+
         wifi.easy_start(wifi_cfg);
 
         vTaskDelay(pdMS_TO_TICKS(5000));
 
-        // mqtt
-        esp_mqtt_client_config_t mqtt_cfg;
-        memset(&mqtt_cfg, 0, sizeof(mqtt_cfg));
-        mqtt_cfg.broker.address.uri = "mqtt://47.113.149.47:1883";
-        mqtt_cfg.credentials.client_id = "esp32-node";  // 自身id
-        mqtt_cfg.credentials.username = "esp32-1";
-        mqtt_cfg.credentials.authentication.password = "esp32-1";
-        mqtt client;
-        mqtt_app_start(client);                    // 建队列/任务 + 注册消息回调（app 层）
-        client.easy_start(mqtt_cfg);
-        client.subscribe("home/room1/device1/cmd", 1);   // 订阅下行主题
+        mqtt_app_start(client);      // 建队列/任务 + 注册消息回调（app 层）
+        client.easy_start(mqtt_cfg); // s_* / mqtt_cfg 都还活着
     }
 
     while(1)

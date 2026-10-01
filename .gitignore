@@ -78,3 +78,8 @@ Desktop.ini
 *.sln.docstates # Visual Studio
 
 .vscode/
+
+# Local agent tooling (npx skills 安装，不入库)
+.agents/
+.claude/
+skills-lock.json
