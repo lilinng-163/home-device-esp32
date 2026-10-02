@@ -181,12 +181,35 @@ document.getElementById('f').addEventListener('submit', async function(e){
   msg.textContent = '保存中…';
   try{
     var r = await fetch('/', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(cfg) });
-    msg.textContent = r.ok ? ('已保存：' + await r.text()) : ('失败 ' + r.status);
+    var t = await r.text();
+    msg.textContent = r.ok ? (t === 'unchanged' ? '没有变化' : '已保存') : ('失败 ' + r.status);
   }catch(err){ msg.textContent = '请求失败'; }
 });
 
-addRow('pub', 'home/room1/device1/data');
-addRow('sub', 'home/room1/device1/cmd');
+async function load(){
+  var c = window.__CFG__ || {};
+  if(!window.__CFG__){
+    try{ var r = await fetch('/config'); if(r.ok) c = await r.json(); }catch(e){}
+  }
+  if(c.wifi){
+    document.getElementById('ssid').value = c.wifi.ssid || '';
+    document.getElementById('wpass').value = c.wifi.pass || '';
+  }
+  if(c.mqtt){
+    var m = c.mqtt;
+    var set = function(id, v){ if(v != null) document.getElementById(id).value = v; };
+    set('host', m.host); set('port', m.port); set('cid', m.client_id);
+    set('muser', m.username); set('mpass', m.password);
+  }
+  var pub = (c.publish || []), sub = (c.subscribe || []);
+  if(!pub.length) pub = ['home/room1/device1/data'];
+  if(!sub.length) sub = ['home/room1/device1/cmd'];
+  document.getElementById('pub').innerHTML = '';
+  document.getElementById('sub').innerHTML = '';
+  pub.forEach(function(t){ addRow('pub', t); });
+  sub.forEach(function(t){ addRow('sub', t); });
+}
+load();
 </script>
 </body>
 </html>

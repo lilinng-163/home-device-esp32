@@ -14,6 +14,7 @@ class https_server
 {
 public:
     void init(httpd_uri_t &root, https_cb_t cb, https_user_cb_t https_user_cb);
+    void add_uri(httpd_uri_t &uri);
 private:
     static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
     static void https_server_user_callback(esp_https_server_user_cb_arg_t *user_cb);

@@ -147,3 +147,8 @@ void https_server::init(httpd_uri_t &root, https_cb_t cb, https_user_cb_t https_
     ESP_LOGI(TAG, "Registering URI handlers");
     httpd_register_uri_handler(server_, &root);
 }
+
+void https_server::add_uri(httpd_uri_t &uri)
+{
+    httpd_register_uri_handler(server_, &uri);
+}
