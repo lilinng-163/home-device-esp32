@@ -11,6 +11,7 @@ class wake_word
 public:
     void init(void);
     int16_t *new_buf(void);
+    int feed_byte_size(void);         // 一帧需要多少字节 (chunksize*channels*2)
     void feed(const int16_t *buf);
     afe_fetch_result_t *fetch(void);
     esp_afe_sr_data_t *get_data(void) {return afe_data;}

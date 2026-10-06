@@ -11,7 +11,8 @@
 void wake_word::init(void)
 {
     srmodel_list_t *models = esp_srmodel_init("model");
-    afe_config_t *afe_config = afe_config_init("MMNR", models, AFE_TYPE_SR, AFE_MODE_HIGH_PERF);
+    // 单麦：input_format="M"（M=麦克风, R=回采参考, N=未用）
+    afe_config_t *afe_config = afe_config_init("M", models, AFE_TYPE_SR, AFE_MODE_HIGH_PERF);
 
     // 获取句柄
     afe_handle = esp_afe_handle_from_config(afe_config);
@@ -26,6 +27,12 @@ int16_t *wake_word::new_buf(void)
     int feed_nch = afe_handle->get_feed_channel_num(afe_data);
     int16_t *feed_buf = new int16_t[feed_chunksize * feed_nch];
     return feed_buf;
+}
+
+int wake_word::feed_byte_size(void)
+{
+    return afe_handle->get_feed_chunksize(afe_data) *
+           afe_handle->get_feed_channel_num(afe_data) * sizeof(int16_t);
 }
 // 规范起见在线程末尾进行delete
 void wake_word::feed(const int16_t *buf)

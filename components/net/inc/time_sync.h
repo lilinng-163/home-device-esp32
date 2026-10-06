@@ -7,3 +7,6 @@ bool time_sync(void);
 
 // 返回 RFC1123 格式的 UTC 时间，如 "Mon, 04 Oct 2026 08:16:22 GMT"
 std::string time_rfc1123(void);
+
+// 时钟是否已同步好（年份 >= 2023 视为有效）
+bool time_is_ready(void);

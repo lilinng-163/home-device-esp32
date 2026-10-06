@@ -24,6 +24,8 @@
 #include "time_sync.h"
 #include "xfei.h"
 #include "secrets.h"
+#include "wake_word.h"
+#include "wakeup_board.h"
 
 static const char *TAG = "app";
 
@@ -32,10 +34,6 @@ static const std::string ap_ssid = "esp32";
 static const std::string ap_pass = "esp32-lilinng";
 
 static const std::string host = "iat-api.xfyun.cn/v2/iat";
-
-// 讯飞 APISecret（换成你的；正式请放 Kconfig / 不提交的 secrets.h，别进 git）
-// 讯飞凭据在 secrets.h（不提交 git）
-
 
 extern "C" void app_main(void)
 {
@@ -68,7 +66,7 @@ extern "C" void app_main(void)
     web_config_set_config(cfg_raw);   // 网页回显用这份内存，不再读 NVS
 
 #ifdef CONFIG_BOARD_KEY
-    // ---- 按键：按住 2 秒才算数 ----
+    // ---- 按键：按住 2 秒 ----
     key &init_key = board_key();
     bool enter_ap = false;
     if(init_key.get_status())
@@ -137,46 +135,12 @@ extern "C" void app_main(void)
         mqtt_app_start(client);      // 建队列/任务 + 注册消息回调（app 层）
         client.easy_start(mqtt_cfg);
 
-
-        // xfei: 连接 + 麦克风 → 讯飞识别
-        static xfei_dictation xfei;
-        std::string apikey(XFEI_APIKEY);
-        std::string apisecret(XFEI_APISECRET);
-
+        static wake_word wk;
         codec &mic = board_codec();
-        mic.open(16000, 1, 16);            // 先把咪头开好，再连，尽量缩短空闲
-
-        xfei.set_appid(XFEI_APPID);
-        xfei.easy_start(apikey, apisecret);
-
-        // 等 WS 真正连上（最多 ~10s）
-        int wait = 0;
-        while (!xfei.is_connected() && wait++ < 200)
-        {
-            vTaskDelay(pdMS_TO_TICKS(50));
-        }
-
-        if (!xfei.is_connected())
-        {
-            ESP_LOGE(TAG, "ws not connected, give up");
-        }
-        else
-        {
-            ESP_LOGI(TAG, ">>> You can start speaking now (recording ~4s) <<<");
-
-            static uint8_t pcm[1280];          // 40ms @ 16k/mono/16bit
-            int n = mic.read(pcm, sizeof(pcm));
-            xfei.request(pcm, n, 0);           // 首帧
-            for (int i = 1; i < 100; i++)      // 约 4 秒
-            {
-                n = mic.read(pcm, sizeof(pcm));
-                if (n <= 0) break;
-                xfei.request(pcm, n, 1);
-                vTaskDelay(pdMS_TO_TICKS(40));
-            }
-            xfei.request(nullptr, 0, 2);       // 末帧
-        }
-
+        mic.open(16000, 1, 16);
+        wk.init();                         // 读 model 分区 + 建 AFE
+        wakeup_board_start(wk, mic, XFEI_APPID, XFEI_APIKEY, XFEI_APISECRET);   // 起 feed / fetch 任务
+        ESP_LOGI(TAG, ">>> say the wake word now <<<");
     }
 
     while(1)

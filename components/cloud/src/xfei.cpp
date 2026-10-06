@@ -6,6 +6,8 @@
 #include <esp_log.h>
 #include <esp_websocket_client.h>
 #include <esp_crt_bundle.h>
+#include <esp_heap_caps.h>
+#include <freertos/FreeRTOS.h>
 #include <psa/crypto.h>
 #include <mbedtls/base64.h>
 #include <cJSON.h>
@@ -88,7 +90,12 @@ static void default_websocket_event(void *ctx, esp_event_base_t base, int32_t ev
     }
 }
 
-std::string xfei_dictation::compute_authorization(std::string &apikey, std::string &apisecret)
+xfei_dictation::xfei_dictation(const std::string &appid, const std::string &apikey, const std::string &apisecret)
+    : appid_(appid), apikey_(apikey), apisecret_(apisecret)
+{
+}
+
+std::string xfei_dictation::compute_authorization(void)
 {
     date_ = time_rfc1123();   // 签名和 URL 共用同一个 date
 
@@ -101,14 +108,14 @@ std::string xfei_dictation::compute_authorization(std::string &apikey, std::stri
     // 普通软件密钥：key = apisecret 字符串本身（不是 eFuse）
     psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
     psa_set_key_type(&attr, PSA_KEY_TYPE_HMAC);
-    psa_set_key_bits(&attr, apisecret.size() * 8);
+    psa_set_key_bits(&attr, apisecret_.size() * 8);
     psa_set_key_usage_flags(&attr, PSA_KEY_USAGE_SIGN_MESSAGE);
     psa_set_key_algorithm(&attr, PSA_ALG_HMAC(PSA_ALG_SHA_256));
     psa_set_key_lifetime(&attr, PSA_KEY_LIFETIME_VOLATILE);
 
     psa_key_id_t key_id = 0;
     psa_status_t st = psa_import_key(&attr,
-                                     reinterpret_cast<const uint8_t *>(apisecret.data()), apisecret.size(),
+                                     reinterpret_cast<const uint8_t *>(apisecret_.data()), apisecret_.size(),
                                      &key_id);
 
     uint8_t sha[32] = {0};
@@ -133,7 +140,7 @@ std::string xfei_dictation::compute_authorization(std::string &apikey, std::stri
     ESP_LOGI(TAG, "signature: %s", signature.c_str());
 
     // authorization_origin
-    std::string auth_origin = "api_key=\"" + apikey + "\","
+    std::string auth_origin = "api_key=\"" + apikey_ + "\","
                               " algorithm=\"hmac-sha256\","
                               " headers=\"host date request-line\","
                               " signature=\"" + signature + "\"";
@@ -144,9 +151,9 @@ std::string xfei_dictation::compute_authorization(std::string &apikey, std::stri
     return authorization;
 }
 
-void xfei_dictation::init(std::string &apikey, std::string &apisecret, xfei_dictation_cb_t cb)
+void xfei_dictation::init(xfei_dictation_cb_t cb)
 {
-    std::string authorization = compute_authorization(apikey, apisecret);   // 同时填好 date_
+    std::string authorization = compute_authorization();   // 同时填好 date_
 
     // 组 wss 地址：authorization/date/host 三处都要 URL 编码
     uri_ = "wss://" + std::string(XFEI_HOST) + "/v2/iat"
@@ -158,7 +165,12 @@ void xfei_dictation::init(std::string &apikey, std::string &apisecret, xfei_dict
     cfg_.uri = uri_.c_str();
     cfg_.network_timeout_ms = 10000;
     cfg_.crt_bundle_attach = esp_crt_bundle_attach;   // wss 用系统根证书校验
-    cfg_.reconnect_timeout_ms = 1000;
+    cfg_.reconnect_timeout_ms = 5000;
+    cfg_.disable_auto_reconnect = true;               // 每唤醒手动连，别自己乱重连
+
+    ESP_LOGI(TAG, "heap: internal=%u KB, spiram=%u KB",
+             (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
+             (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024));
 
     handle_ = esp_websocket_client_init(&cfg_);
 
@@ -171,10 +183,10 @@ void xfei_dictation::set_event_cb(xfei_dictation_cb_t cb, void *ctx)
     esp_websocket_register_events(handle_, WEBSOCKET_EVENT_ANY, cb, ctx ? ctx : this);
 }
 
-int xfei_dictation::easy_start(std::string &apikey, std::string &apisecret)
+int xfei_dictation::easy_start(void)
 {
-    compute_authorization(apikey, apisecret);
-    init(apikey, apisecret, nullptr);
+    compute_authorization();
+    init(nullptr);
     auto ret = start();
     if (ret != 0)
     {
@@ -218,7 +230,10 @@ void xfei_dictation::request(const uint8_t *pcm, int len, int status)
         frame = "{" + data + "}";
     }
 
-    esp_websocket_client_send_text(handle_, frame.c_str(), frame.size(), 10000);
+    if (!esp_websocket_client_is_connected(handle_))
+        return;   // 未连接就别发，避免阻塞
+
+    esp_websocket_client_send_text(handle_, frame.c_str(), frame.size(), pdMS_TO_TICKS(1000));
     ESP_LOGD(TAG, "send frame status=%d audio_bytes=%d frame_len=%d", status, len, (int)frame.size());
 }
 
@@ -289,8 +304,18 @@ void xfei_dictation::on_finish(void)
     ESP_LOGI(TAG, "ws finish");
 }
 
+void xfei_dictation::close(void)
+{
+    if (handle_)
+    {
+        esp_websocket_client_stop(handle_);
+        esp_websocket_client_destroy(handle_);
+        handle_ = nullptr;
+    }
+    text_.clear();
+}
+
 xfei_dictation::~xfei_dictation(void)
 {
-    esp_websocket_client_stop(handle_);
-    esp_websocket_client_destroy(handle_);
+    close();
 }

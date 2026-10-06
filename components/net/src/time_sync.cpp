@@ -15,7 +15,8 @@ bool time_sync(void)
     static bool inited = false;
     if (!inited)
     {
-        esp_sntp_config_t cfg = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+        // 国内用阿里 NTP，比 pool.ntp.org 稳
+        esp_sntp_config_t cfg = ESP_NETIF_SNTP_DEFAULT_CONFIG("ntp.aliyun.com");
         if (esp_netif_sntp_init(&cfg) != ESP_OK)
         {
             ESP_LOGE(TAG, "sntp init failed");
@@ -24,15 +25,19 @@ bool time_sync(void)
         inited = true;
     }
 
-    // 等第一次同步完成（联网后才有意义）
-    if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000)) != ESP_OK)
+    // 等同步，最多重试 3 次（每次 10 秒）
+    for (int i = 0; i < 3; i++)
     {
-        ESP_LOGW(TAG, "sntp sync timeout");
-        return false;
+        if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000)) == ESP_OK)
+        {
+            ESP_LOGI(TAG, "time synced: %s", time_rfc1123().c_str());
+            return true;
+        }
+        ESP_LOGW(TAG, "sntp sync timeout, retry %d", i + 1);
     }
 
-    ESP_LOGI(TAG, "time synced: %s", time_rfc1123().c_str());
-    return true;
+    ESP_LOGE(TAG, "sntp sync failed");
+    return false;
 }
 
 std::string time_rfc1123(void)
@@ -45,4 +50,9 @@ std::string time_rfc1123(void)
     // 默认 C locale → 英文缩写 (Mon / Oct)；别 setlocale 成中文
     strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", &tm_utc);
     return std::string(buf);
+}
+
+bool time_is_ready(void)
+{
+    return time(nullptr) > 1700000000;   // 2023-11-14 之后视为已同步
 }
