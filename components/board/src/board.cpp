@@ -9,12 +9,13 @@
 #include "lcd.h"
 #include "io_ex.h"
 #include "key.h"
+#include "codec.h"
 
 const board_t &board()
 {
     static const board_t b = {
-        CONFIG_BOARD_I2C0_SCL,            // i2c0_scl
-        CONFIG_BOARD_I2C0_SDA,            // i2c0_sda
+        CONFIG_BOARD_I2C_SCL,            // i2c0_scl
+        CONFIG_BOARD_I2C_SDA,            // i2c0_sda
         CONFIG_BOARD_XL9555_ADDR,         // xl9555_addr
         CONFIG_BOARD_XL9555_LCD_PWR_BIT,  // lcd_pwr_bit
         CONFIG_BOARD_XL9555_LCD_RST_BIT,  // lcd_rst_bit
@@ -24,6 +25,13 @@ const board_t &board()
         CONFIG_BOARD_LCD_CS,              // lcd_cs
         CONFIG_BOARD_LCD_DC,              // lcd_dc
         CONFIG_BOARD_KEY_GPIO,            // key_gpio
+        CONFIG_BOARD_ES8388_I2C_SCL,      // es8388_i2c_scl
+        CONFIG_BOARD_ES8388_I2C_SDA,      // es8388_i2c_sda
+        CONFIG_BOARD_ES8388_I2S_MCLK,     // es8388_mclk
+        CONFIG_BOARD_ES8388_I2S_SCK,      // es8388_sck
+        CONFIG_BOARD_ES8388_I2S_LRCK,     // es8388_lrck
+        CONFIG_BOARD_ES8388_I2S_SDIN,     // es8388_sdin
+        CONFIG_BOARD_ES8388_I2S_SDOUT,    // es8388_sdout
     };
     return b;
 }
@@ -33,11 +41,13 @@ static i2c_master_bus_handle_t s_i2c0 = nullptr;
 static xl9555 s_ioex;
 static lcd    s_lcd;
 static key    s_key;
+static codec  s_codec;
 
 void board_init()
 {
     const board_t &b = board();
 
+#if CONFIG_BOARD_I2C && CONFIG_BOARD_AUDIO_ES8388 && CONFIG_BOARD_XL9555 && CONFIG_BOARD_LCD && CONFIG_BOARD_KEY
     // 1) 建 I2C0 总线
     i2c_master_bus_config_t ic = {};
     ic.i2c_port = I2C_NUM_0;
@@ -64,7 +74,12 @@ void board_init()
     s_ioex.write_pin(b.lcd_rst_bit, true);
     vTaskDelay(pdMS_TO_TICKS(120));
 
-    // 5) LCD（引脚给它，它自己建 SPI）
+    // 5) ES8388 音频编解码器（挂在同一条 I2C0 上）
+    // 方向：SDIN 是芯片 DAC 数据输入 → 接 ESP 的 dout；SDOUT 是芯片 ADC 数据输出 → 接 ESP 的 din
+    s_codec.init(s_i2c0, b.es8388_mclk, b.es8388_sck, b.es8388_lrck,
+                 b.es8388_sdin /*dout*/, b.es8388_sdout /*din*/);
+
+    // 6) LCD（引脚给它，它自己建 SPI）
     lcd_config_t lc;
     lc.pin_clk  = (gpio_num_t)b.lcd_sck;
     lc.pin_mosi = (gpio_num_t)b.lcd_mosi;
@@ -84,8 +99,10 @@ void board_init()
     kc.pin_bit_mask = (1ULL << b.key_gpio);
     kc.pull_up_en = GPIO_PULLUP_ENABLE;
     s_key.init((gpio_num_t)b.key_gpio, kc);
+#endif
 }
 
 lcd    &board_lcd()  { return s_lcd;  }
 io_ex  &board_ioex() { return s_ioex; }
 key    &board_key()  { return s_key;  }
+codec  &board_codec(){ return s_codec; }

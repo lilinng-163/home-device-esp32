@@ -1,11 +1,13 @@
 #include <string>
 #include <cstring>
 #include <cstdio>
+#include <cmath>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <nvs_flash.h>
 #include <esp_log.h>
+#include <esp_heap_caps.h>
 
 #include "wifi.h"
 #include "mqtt.h"
@@ -14,16 +16,26 @@
 #include "web_config.h"
 #include "board.h"
 #include "key.h"
+#include "codec.h"
 #include "lcd.h"
 #include "lv_disp.h"
 #include "ui.h"
 #include "https_server.h"
+#include "time_sync.h"
+#include "xfei.h"
+#include "secrets.h"
 
 static const char *TAG = "app";
 
 // AP 模式的默认热点（与 NVS 里的 STA 配置无关）
 static const std::string ap_ssid = "esp32";
 static const std::string ap_pass = "esp32-lilinng";
+
+static const std::string host = "iat-api.xfyun.cn/v2/iat";
+
+// 讯飞 APISecret（换成你的；正式请放 Kconfig / 不提交的 secrets.h，别进 git）
+// 讯飞凭据在 secrets.h（不提交 git）
+
 
 extern "C" void app_main(void)
 {
@@ -38,10 +50,13 @@ extern "C" void app_main(void)
     // ---- 硬件：板级一次性初始化（建总线 + 挂芯片/外设 + 接线）----
     board_init();
 
+#ifdef CONFIG_BOARD_LCD
     // ---- LVGL：把板子上的 LCD 接上 ----
     lcd &screen = board_lcd();
     lvgl_port_init(screen);
     lvgl_task_start();
+
+#endif
 
     // ---- 不管 AP / STA，开机先读一次 NVS ----
     app_config cfg;
@@ -52,6 +67,7 @@ extern "C" void app_main(void)
     }
     web_config_set_config(cfg_raw);   // 网页回显用这份内存，不再读 NVS
 
+#ifdef CONFIG_BOARD_KEY
     // ---- 按键：按住 2 秒才算数 ----
     key &init_key = board_key();
     bool enter_ap = false;
@@ -60,6 +76,7 @@ extern "C" void app_main(void)
         vTaskDelay(pdMS_TO_TICKS(2000));
         enter_ap = init_key.get_status();
     }
+#endif
 
     if(enter_ap)    // AP：热点 + https 配网页
     {
@@ -102,11 +119,64 @@ extern "C" void app_main(void)
 
         wifi.easy_start(wifi_cfg);
 
-        vTaskDelay(pdMS_TO_TICKS(5000));
+        vTaskDelay(pdMS_TO_TICKS(3000));
 
+        // 暂时强延时得到wifi
+
+        // 同步时间
+        bool is_time_get = time_sync();
+        if(is_time_get)
+        {
+            ESP_LOGI(TAG, "%s", time_rfc1123().c_str());
+        }
+        else
+        {
+            ESP_LOGI(TAG, "time lost");
+        }
         for(auto &t : cfg.subscribe) client.subscribe(t.c_str(), 1);   // subscribe 会拷贝主题
         mqtt_app_start(client);      // 建队列/任务 + 注册消息回调（app 层）
         client.easy_start(mqtt_cfg);
+
+
+        // xfei: 连接 + 麦克风 → 讯飞识别
+        static xfei_dictation xfei;
+        std::string apikey(XFEI_APIKEY);
+        std::string apisecret(XFEI_APISECRET);
+
+        codec &mic = board_codec();
+        mic.open(16000, 1, 16);            // 先把咪头开好，再连，尽量缩短空闲
+
+        xfei.set_appid(XFEI_APPID);
+        xfei.easy_start(apikey, apisecret);
+
+        // 等 WS 真正连上（最多 ~10s）
+        int wait = 0;
+        while (!xfei.is_connected() && wait++ < 200)
+        {
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
+
+        if (!xfei.is_connected())
+        {
+            ESP_LOGE(TAG, "ws not connected, give up");
+        }
+        else
+        {
+            ESP_LOGI(TAG, ">>> You can start speaking now (recording ~4s) <<<");
+
+            static uint8_t pcm[1280];          // 40ms @ 16k/mono/16bit
+            int n = mic.read(pcm, sizeof(pcm));
+            xfei.request(pcm, n, 0);           // 首帧
+            for (int i = 1; i < 100; i++)      // 约 4 秒
+            {
+                n = mic.read(pcm, sizeof(pcm));
+                if (n <= 0) break;
+                xfei.request(pcm, n, 1);
+                vTaskDelay(pdMS_TO_TICKS(40));
+            }
+            xfei.request(nullptr, 0, 2);       // 末帧
+        }
+
     }
 
     while(1)

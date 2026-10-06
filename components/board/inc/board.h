@@ -3,6 +3,7 @@
 class lcd;
 class io_ex;
 class key;
+class codec;
 
 struct board_t
 {
@@ -20,6 +21,15 @@ struct board_t
     int lcd_dc;
 
     int key_gpio;
+
+    // ES8388 音频
+    int es8388_i2c_scl;
+    int es8388_i2c_sda;
+    int es8388_mclk;
+    int es8388_sck;
+    int es8388_lrck;
+    int es8388_sdin;
+    int es8388_sdout;
 };
 
 const board_t &board(void);
@@ -31,3 +41,4 @@ void board_init();
 lcd    &board_lcd();
 io_ex  &board_ioex();
 key    &board_key();
+codec  &board_codec();

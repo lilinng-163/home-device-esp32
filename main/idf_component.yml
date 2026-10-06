@@ -20,3 +20,6 @@ dependencies:
   lvgl/lvgl: ^9.6.0
   jbrilha/esp_lcd_st7789: ^1.0.2
   sheldonix/esp_io_expander_xl9555: ^0.8.0
+  espressif/esp_codec_dev: ^1.6.2
+  espressif/esp_websocket_client: ^1.8.0
+  espressif/esp-sr: ^2.0.0
