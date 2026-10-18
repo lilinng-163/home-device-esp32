@@ -1,0 +1,9 @@
+menu "App"
+    config APP_LED_GPIO
+        int "LED GPIO (-1 = disabled)"
+        default 1
+        range -1 48
+    config APP_LED_ACTIVE_LOW
+        bool "LED active low"
+        default y
+endmenu

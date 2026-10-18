@@ -7,6 +7,7 @@
 #include <freertos/task.h>
 #include <freertos/queue.h>
 #include <esp_log.h>
+#include <esp_heap_caps.h>
 #include <cJSON.h>
 
 static constexpr const char *TAG = "mqtt_app";
@@ -60,8 +61,30 @@ static void mqtt_process_thread(void *param)
 void mqtt_app_start(mqtt &client)
 {
     s_queue = xQueueCreate(10, sizeof(mqtt_msg));
-    client.set_msg_cb(on_mqtt_msg, nullptr);          // 注册消息回调
+    if (s_queue == nullptr)
+    {
+        ESP_LOGE(TAG, "queue create fail");
+        return;
+    }
 
-    xTaskCreate(mqtt_process_thread, "mqtt_process", 8192, nullptr, 4, nullptr);
+    // 应用层只消费队列并解析 JSON，栈放 PSRAM，给 WS/TLS 留出内部连续内存。
+    // MQTT 库自己的网络任务不受影响，仍沿用组件的内存配置。
+    BaseType_t ret = xTaskCreatePinnedToCoreWithCaps(mqtt_process_thread,
+                                                   "mqtt_process",
+                                                   8192,
+                                                   nullptr,
+                                                   4,
+                                                   nullptr,
+                                                   tskNO_AFFINITY,
+                                                   MALLOC_CAP_SPIRAM);
+    if (ret != pdPASS)
+    {
+        ESP_LOGE(TAG, "process task create fail");
+        vQueueDelete(s_queue);
+        s_queue = nullptr;
+        return;
+    }
+
+    client.set_msg_cb(on_mqtt_msg, nullptr);
     ESP_LOGI(TAG, "mqtt app started");
 }

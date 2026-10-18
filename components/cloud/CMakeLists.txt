@@ -1,4 +1,6 @@
-idf_component_register(SRCS "src/xfei.cpp"
+set(src src/xfei.cpp
+        src/llm.cpp)
+idf_component_register(SRCS ${src}
                     INCLUDE_DIRS "inc"
-                    REQUIRES esp_websocket_client esp_event
-                    PRIV_REQUIRES net esp_http_client mbedtls espressif__cjson cxx)
+                    REQUIRES esp_websocket_client esp_event esp_http_client espressif__cjson
+                    PRIV_REQUIRES net mbedtls esp-tls tcp_transport lwip esp_timer esp_hw_support freertos cxx)

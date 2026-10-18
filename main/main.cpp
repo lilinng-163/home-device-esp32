@@ -22,7 +22,6 @@
 #include "ui.h"
 #include "https_server.h"
 #include "time_sync.h"
-#include "xfei.h"
 #include "secrets.h"
 #include "wake_word.h"
 #include "wakeup_board.h"
@@ -131,6 +130,7 @@ extern "C" void app_main(void)
         {
             ESP_LOGI(TAG, "time lost");
         }
+
         for(auto &t : cfg.subscribe) client.subscribe(t.c_str(), 1);   // subscribe 会拷贝主题
         mqtt_app_start(client);      // 建队列/任务 + 注册消息回调（app 层）
         client.easy_start(mqtt_cfg);
@@ -139,7 +139,14 @@ extern "C" void app_main(void)
         codec &mic = board_codec();
         mic.open(16000, 1, 16);
         wk.init();                         // 读 model 分区 + 建 AFE
-        wakeup_board_start(wk, mic, XFEI_APPID, XFEI_APIKEY, XFEI_APISECRET);   // 起 feed / fetch 任务
+
+        cloud_llm_config llm_cfg;
+        llm_cfg.url = DEEPSEEK_API_URL;
+        llm_cfg.model = DEEPSEEK_MODEL;
+        llm_cfg.api_key = DEEPSEEK_API_KEY;
+
+        // 起 feed / fetch / 讯飞识别 / LLM 文本队列（不自动发 Hi 请求）
+        wakeup_board_start(wk, mic, XFEI_APPID, XFEI_APIKEY, XFEI_APISECRET, llm_cfg);
         ESP_LOGI(TAG, ">>> say the wake word now <<<");
     }
 

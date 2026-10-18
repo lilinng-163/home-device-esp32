@@ -1,13 +1,14 @@
 #pragma once
 #include <string>
-#include <cstring>
-
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#include <freertos/queue.h>
 
 #include "xfei.h"
 
-extern QueueHandle_t queue_handle;
+struct cloud_llm_config
+{
+    std::string url;
+    std::string model;
+    std::string api_key;
+};
 
-void cloud_xfei_proc_start(xfei_dictation &xfei);
+// 绑定 xfei 的整句回调，起 LLM 消费任务和串口测试任务
+void cloud_xfei_proc_start(xfei_dictation &xfei, const cloud_llm_config &llm);
