@@ -14,7 +14,10 @@
 
 static std::mutex s_mtx;
 
-std::mutex &lvgl_mutex() { return s_mtx; }
+std::mutex &lvgl_mutex()
+{
+    return s_mtx;
+}
 
 // 传输完成 → 通知 LVGL（注册在 io() 上）
 static bool flush_ready_cb(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t *, void *ctx)
@@ -31,7 +34,10 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
     esp_lcd_panel_draw_bitmap(panel, area->x1, area->y1, area->x2 + 1, area->y2 + 1, px_map);
 }
 
-static void tick_cb(void *) { lv_tick_inc(2); }   // 每 2ms
+static void tick_cb(void *)
+{
+    lv_tick_inc(2);
+} // 每 2ms
 
 void lvgl_port_init(lcd &screen)
 {
@@ -56,7 +62,7 @@ void lvgl_port_init(lcd &screen)
     targs.name = "lvgl_tick";
     esp_timer_handle_t tick = nullptr;
     esp_timer_create(&targs, &tick);
-    esp_timer_start_periodic(tick, 2000);   // 2ms
+    esp_timer_start_periodic(tick, 2000); // 2ms
 }
 
 static void lvgl_task(void *arg)
@@ -69,8 +75,14 @@ static void lvgl_task(void *arg)
             std::lock_guard<std::mutex> lk(lvgl_mutex());
             delay_ms = lv_timer_handler();
         }
-        if (delay_ms < 5)   delay_ms = 5;
-        if (delay_ms > 500) delay_ms = 500;
+        if (delay_ms < 5)
+        {
+            delay_ms = 5;
+        }
+        if (delay_ms > 500)
+        {
+            delay_ms = 500;
+        }
         vTaskDelay(pdMS_TO_TICKS(delay_ms));
     }
 }

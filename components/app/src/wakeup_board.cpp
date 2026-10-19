@@ -18,6 +18,7 @@
 #include "time_sync.h"
 #include "cloud_xfei_proc.h"
 #include "wakeup_board.h"
+#include "ui.h"
 
 static const char *TAG = "wakeup";
 
@@ -89,6 +90,7 @@ static void afe_task(void *parameters)
             if (res->wakeup_state == WAKENET_DETECTED)
             {
                 ESP_LOGI(TAG, "===> wakeup! word_index=%d", res->wake_word_index);
+                ui_set_voice(ui_voice_state::listening);
                 s_vstate = VoiceState::RECOGNIZING;
                 t0 = esp_timer_get_time();
                 speech_start = 0;
@@ -134,6 +136,7 @@ static void afe_task(void *parameters)
             if (now - t0 > MAX_RECORD_US) // 最长 8 秒兜底
             {
                 ESP_LOGI(TAG, "record max window");
+                ui_set_voice(ui_voice_state::recognizing);
                 s_vstate = VoiceState::WAITING;
             }
             else if (speech_ok && res->vad_state == VAD_SILENCE &&
@@ -143,6 +146,7 @@ static void afe_task(void *parameters)
                          "vad end: speech=%lld ms, tail=%lld ms",
                          (long long)((last_speech - speech_start) / 1000),
                          (long long)((now - last_speech) / 1000));
+                ui_set_voice(ui_voice_state::recognizing);
                 s_vstate = VoiceState::WAITING;
             }
             else if (!speech_ok && speech_start != 0 &&
@@ -222,6 +226,7 @@ static void xfei_task(void *parameters)
     // 只有这个消费者清空音频。AFE 在 WAITING 时不会生产，避免跨任务 reset 缓冲。
     auto finish_session = [&]()
     {
+        ui_finish_listening();
         log_tx();
         s_vstate = VoiceState::WAITING;
         xfei.close();
@@ -297,12 +302,13 @@ static void xfei_task(void *parameters)
                                 vTaskDelay(pdMS_TO_TICKS((remaining_us + 999) / 1000));
                             }
                         }
-                        ESP_LOGI(TAG,
-                                 "asr_tx_probe: sent=%d elapsed=%lldms max_send=%lldms stack_min=%u",
-                                 (int)sent,
-                                 (long long)((esp_timer_get_time() - send_t0) / 1000),
-                                 (long long)(max_send_us / 1000),
-                                 (unsigned)uxTaskGetStackHighWaterMark(nullptr));
+                        ESP_LOGI(
+                            TAG,
+                            "asr_tx_probe: sent=%d elapsed=%lldms max_send=%lldms stack_min=%u",
+                            (int)sent,
+                            (long long)((esp_timer_get_time() - send_t0) / 1000),
+                            (long long)(max_send_us / 1000),
+                            (unsigned)uxTaskGetStackHighWaterMark(nullptr));
                         if (sent && xfei.request(nullptr, 0, 2))
                         {
                             int64_t final_t0 = esp_timer_get_time();
@@ -515,4 +521,5 @@ void wakeup_board_start(wake_word &wk,
     BaseType_t r2 = xTaskCreatePinnedToCoreWithCaps(
         xfei_task, "xfei_task", 12 * 1024, &s_ctx, 4, &xfei_task_handle, 1, MALLOC_CAP_SPIRAM);
     ESP_LOGI(TAG, "tasks: afe=%d xfei=%d", (int)r1, (int)r2);
+    ui_set_voice(r1 == pdPASS && r2 == pdPASS ? ui_voice_state::ready : ui_voice_state::error);
 }

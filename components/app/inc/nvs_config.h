@@ -6,10 +6,15 @@
 // 一份完整配置（从 NVS 里那份 JSON 解析出来）
 struct app_config
 {
-    std::string ssid, pass;         // wifi
-    std::string host;               // mqtt broker
-    int         port = 1883;
-    std::string client_id, username, password;
+    std::string ssid;
+    std::string pass;
+
+    // EMQX 默认 TCP 监听端口；网页保存的配置仍可覆盖这些缺省值。
+    std::string host = "162.14.72.194";
+    int port = 1883;
+    std::string client_id;
+    std::string username;
+    std::string password;
     std::vector<std::string> publish;
     std::vector<std::string> subscribe;
 };

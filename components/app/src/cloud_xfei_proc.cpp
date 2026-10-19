@@ -13,6 +13,7 @@
 #include "device_command.h"
 #include "llm.h"
 #include "wakeup_board.h"
+#include "ui.h"
 
 static const constexpr char *TAG = "cloud_xfei_proc";
 static const constexpr size_t text_max = 1024;
@@ -53,9 +54,11 @@ static void enqueue_text(const char *text, size_t len)
     char item[text_max] = {};
     memcpy(item, text, len);
     item[len] = '\0';
+    ui_set_voice(ui_voice_state::thinking, text);
     if (xQueueSend(queue_handle, item, 0) != pdTRUE)
     {
         ESP_LOGW(TAG, "queue full, drop text");
+        ui_set_voice(ui_voice_state::error);
     }
 }
 
@@ -66,11 +69,23 @@ static void handle_device_json(const char *json, size_t len, bool injected)
     if (!device_command_parse(json, len, cmd))
     {
         ESP_LOGW(TAG, "%s json rejected", injected ? "injected" : "llm");
+        ui_set_voice(ui_voice_state::error);
         return;
     }
 
     ESP_LOGI(TAG, "%s json -> %s", injected ? "injected" : "llm", command_name(cmd));
     device_command_execute(cmd);
+
+    if (cmd == device_command::none)
+    {
+        ui_set_voice(ui_voice_state::ignored);
+    }
+    else
+    {
+        const char *expected = cmd == device_command::led_on ? "on" : "off";
+        bool executed = strcmp(device_command_status(), expected) == 0;
+        ui_set_voice(executed ? ui_voice_state::success : ui_voice_state::error);
+    }
 }
 
 static void cloud_xfei_proc_task(void *parameters)
@@ -97,6 +112,7 @@ static void cloud_xfei_proc_task(void *parameters)
         if (err != ESP_OK)
         {
             ESP_LOGW(TAG, "llm request fail: %s", esp_err_to_name(err));
+            ui_set_voice(ui_voice_state::error);
             continue;
         }
 
@@ -105,6 +121,7 @@ static void cloud_xfei_proc_task(void *parameters)
         if (err != ESP_OK)
         {
             ESP_LOGW(TAG, "llm content fail: %s", esp_err_to_name(err));
+            ui_set_voice(ui_voice_state::error);
             continue;
         }
 
@@ -260,11 +277,7 @@ void cloud_xfei_proc_start(xfei_dictation &xfei, const cloud_llm_config &llm)
         return;
     }
 
-    xfei.set_final_cb(
-        [](const std::string &text)
-        {
-            enqueue_text(text.c_str(), text.size());
-        });
+    xfei.set_final_cb([](const std::string &text) { enqueue_text(text.c_str(), text.size()); });
 
     // AFE 启动后内部 RAM 较紧，沿用语音任务的 PSRAM 栈；TLS 仍有独立 12KB 栈。
     BaseType_t ret = xTaskCreatePinnedToCoreWithCaps(cloud_xfei_proc_task,

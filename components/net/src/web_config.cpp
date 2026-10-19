@@ -93,7 +93,7 @@ static esp_err_t config_page_handler(httpd_req_t *req)
         nvs_write_config(body);
         s_cfg = body;
         s_cfg_loaded = true;
-        ESP_LOGI(TAG, "config saved: %s", body.c_str());
+        ESP_LOGI(TAG, "config saved");
 
         httpd_resp_set_type(req, "text/plain");
         httpd_resp_send(req, "ok", HTTPD_RESP_USE_STRLEN);

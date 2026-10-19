@@ -103,7 +103,9 @@ bool device_command_parse(const char *json, size_t len, device_command &cmd)
 #ifndef ESP_PLATFORM
 
 // 主机侧离线验证只需要纯解析函数
-void device_command_init(void) {}
+void device_command_init(void)
+{
+}
 void device_command_execute(device_command cmd)
 {
     (void)cmd;
@@ -120,6 +122,7 @@ const char *device_command_status(void)
 #include <esp_log.h>
 #include <atomic>
 #include "sdkconfig.h"
+#include "ui.h"
 
 #ifndef CONFIG_APP_LED_GPIO
 #define CONFIG_APP_LED_GPIO -1
@@ -129,7 +132,7 @@ const char *device_command_status(void)
 #endif
 
 static const constexpr char *TAG = "device";
-static bool s_ready = false;
+static std::atomic<bool> s_ready{false};
 static std::atomic<bool> s_on{false};
 
 void device_command_init(void)
@@ -161,6 +164,7 @@ void device_command_init(void)
     gpio_set_level((gpio_num_t)gpio_num, off_level);
     s_ready = true;
     s_on = false;
+    ui_set_led(true, false);
     ESP_LOGI(TAG, "led gpio=%d active_low=%d", gpio_num, (int)CONFIG_APP_LED_ACTIVE_LOW);
 #else
     ESP_LOGI(TAG, "led disabled (APP_LED_GPIO=-1)");
@@ -189,6 +193,7 @@ void device_command_execute(device_command cmd)
     }
 
     s_on = on;
+    ui_set_led(true, on);
     ESP_LOGI(TAG, "led %s", on ? "on" : "off");
 }
 
