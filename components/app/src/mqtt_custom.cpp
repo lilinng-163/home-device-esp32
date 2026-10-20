@@ -26,8 +26,11 @@ static void on_mqtt_msg(void *user, const char *topic, const char *payload)
 {
     (void)user;
     mqtt_msg m = {};
+    ESP_LOGI(TAG, "on mqtt msg");
     strncpy(m.topic,   topic,   sizeof(m.topic)   - 1);
     strncpy(m.payload, payload, sizeof(m.payload) - 1);
+    ESP_LOGI(TAG, "%s", m.topic);
+    ESP_LOGI(TAG,"%s", m.payload);
     xQueueSend(s_queue, &m, 0);
 }
 
@@ -40,9 +43,11 @@ static void mqtt_process_thread(void *param)
     {
         if (xQueueReceive(s_queue, &m, portMAX_DELAY) == pdTRUE)
         {
+            ESP_LOGI(TAG, "queue recv");
             if (std::string(m.topic) == "home/room1/device1/cmd")
             {
                 cJSON *root = cJSON_Parse(m.payload);
+                ESP_LOGI(TAG, "root recv");
                 if (root)
                 {
                     cJSON *led = cJSON_GetObjectItem(root, "led");

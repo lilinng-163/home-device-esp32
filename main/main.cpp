@@ -26,6 +26,7 @@
 #include "wake_word.h"
 #include "wakeup_board.h"
 #include "device_command.h"
+#include "sensor_report.h"
 
 static const char *TAG = "app";
 
@@ -171,9 +172,36 @@ extern "C" void app_main(void)
         wakeup_board_start(wk, mic, XFEI_APPID, XFEI_APIKEY, XFEI_APISECRET, llm_cfg);
         ESP_LOGI(TAG, ">>> say the wake word now <<<");
 
+        TickType_t last_report = 0;
+        bool report_sent = false;
+
         // 主任务每秒提交连接和灯光状态；真正绘图由 LVGL 任务完成。
         while (1)
         {
+            TickType_t now = xTaskGetTickCount();
+            if (!client.is_connected())
+            {
+                report_sent = false;
+            }
+            else if (!report_sent || now - last_report >= pdMS_TO_TICKS(5000))
+            {
+                // 示例使用模拟温湿度；接入传感器后替换这两个值即可。
+                const double temperature = 25.6;
+                const double humidity = 60.0;
+                std::string payload;
+                if (make_sensor_report(1, temperature, humidity, payload))
+                {
+                    client.publish("home/room1/device1/data", payload, 1);
+                    ESP_LOGI(TAG, "sample report (simulated): %s", payload.c_str());
+                    last_report = now;
+                    report_sent = true;
+                }
+                else
+                {
+                    ESP_LOGW(TAG, "sample report build failed");
+                }
+            }
+
             wifi_ap_record_t access_point = {};
             bool wifi_connected = esp_wifi_sta_get_ap_info(&access_point) == ESP_OK;
             esp_netif_ip_info_t ip_info = {};

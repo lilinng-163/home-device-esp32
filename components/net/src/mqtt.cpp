@@ -73,7 +73,10 @@ void mqtt::mark_disconnected(void)
 void mqtt::forward_message(const char *topic, int tlen, const char *data, int dlen)
 {
     if (!msg_cb_)
+    {
         return;
+    }
+
 
     std::string t(topic, tlen);
     std::string p(data, dlen);
