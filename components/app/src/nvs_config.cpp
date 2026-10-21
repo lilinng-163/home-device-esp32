@@ -62,9 +62,8 @@ bool nvs_config_load(app_config &cfg, std::string *raw_json)
                 cJSON *cid = cJSON_GetObjectItem(mqtt, "client_id");
                 cJSON *user = cJSON_GetObjectItem(mqtt, "username");
                 cJSON *pw = cJSON_GetObjectItem(mqtt, "password");
-                // 旧示例地址迁移到本次指定的 broker；保留用户另行保存的自定义地址。
-                if (cJSON_IsString(host) && host->valuestring[0] != '\0' &&
-                    strcmp(host->valuestring, "47.113.149.47") != 0)
+                // 用户保存的 broker 优先于公开示例配置。
+                if (cJSON_IsString(host) && host->valuestring[0] != '\0')
                 {
                     cfg.host = host->valuestring;
                 }

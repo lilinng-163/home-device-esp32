@@ -18,6 +18,7 @@
 #include "key.h"
 #include "codec.h"
 #include "lcd.h"
+#include "led.h"
 #include "lv_disp.h"
 #include "ui.h"
 #include "https_server.h"
@@ -29,6 +30,9 @@
 #include "sensor_report.h"
 
 static const char *TAG = "app";
+
+// 收命令和发上报使用同一个设备 ID。
+static constexpr int device_id = 1;
 
 // AP 模式的默认热点（与 NVS 里的 STA 配置无关）
 static const std::string ap_ssid = "esp32";
@@ -49,13 +53,11 @@ extern "C" void app_main(void)
     // ---- 硬件：板级一次性初始化（建总线 + 挂芯片/外设 + 接线）----
     board_init();
 
-#ifdef CONFIG_BOARD_LCD
     // ---- LVGL：把板子上的 LCD 接上 ----
     lcd &screen = board_lcd();
     lvgl_port_init(screen);
     lvgl_task_start();
 
-#endif
 
     // ---- 不管 AP / STA，开机先读一次 NVS ----
     app_config cfg;
@@ -68,7 +70,6 @@ extern "C" void app_main(void)
 
     bool enter_ap = cfg.ssid.empty();
 
-#ifdef CONFIG_BOARD_KEY
     // ---- 按键：按住 2 秒 ----
     key &init_key = board_key();
     if (init_key.get_status())
@@ -76,7 +77,6 @@ extern "C" void app_main(void)
         vTaskDelay(pdMS_TO_TICKS(2000));
         enter_ap = enter_ap || init_key.get_status();
     }
-#endif
 
     if (enter_ap) // AP：热点 + https 配网页
     {
@@ -92,9 +92,7 @@ extern "C" void app_main(void)
 
         wifi.easy_start(wifi_cfg);
 
-#ifdef CONFIG_BOARD_LCD
         ui_show_provisioning(ap_ssid.c_str());
-#endif
 
         static https_server srv;
         srv.init(web_config_uri(), nullptr, nullptr);
@@ -103,9 +101,7 @@ extern "C" void app_main(void)
     }
     else // STA：启动状态面板 + 连 STA/MQTT
     {
-#ifdef CONFIG_BOARD_LCD
         ui_show_dashboard();
-#endif
 
         static wifi_sta wifi;
         wifi_config_t wifi_cfg;
@@ -151,18 +147,51 @@ extern "C" void app_main(void)
             ESP_LOGI(TAG, "time lost");
         }
 
+        // 起mqtt, 订阅, 连接, 自定义处理订阅消息的函数
         for (auto &t : cfg.subscribe)
         {
             client.subscribe(t.c_str(), 1); // subscribe 会拷贝主题
         }
-        mqtt_app_start(client); // 建队列/任务 + 注册消息回调（app 层）
+        // 外层 version/device_id/data 由 mqtt_app 统一校验，这里只处理设备字段。
+        client.handle_json_ = [](const cJSON *data) -> int
+        {
+            const cJSON *led = cJSON_GetObjectItemCaseSensitive(data, "led");
+            if (cJSON_IsBool(led))
+            {
+                if (cJSON_IsTrue(led))
+                {
+                    board_led1().on();
+                }
+                else
+                {
+                    board_led1().off();
+                }
+            }
+            else if (cJSON_IsNumber(led) && led->valuedouble == 1)
+            {
+                board_led1().on();
+            }
+            else if (cJSON_IsNumber(led) && led->valuedouble == 0)
+            {
+                board_led1().off();
+            }
+            else
+            {
+                return -1;
+            }
+            return 0;
+        };
+
+        mqtt_app_start(client, device_id);
         client.easy_start(mqtt_cfg);
 
+        // 语音环境架构和麦克风初始化
         static wake_word wk;
         codec &mic = board_codec();
         mic.open(16000, 1, 16);
         wk.init(); // 读 model 分区 + 建 AFE
 
+        // deepseek 大语言模型
         cloud_llm_config llm_cfg;
         llm_cfg.url = DEEPSEEK_API_URL;
         llm_cfg.model = DEEPSEEK_MODEL;
@@ -189,10 +218,10 @@ extern "C" void app_main(void)
                 const double temperature = 25.6;
                 const double humidity = 60.0;
                 std::string payload;
-                if (make_sensor_report(1, temperature, humidity, payload))
+                if (make_sensor_report(device_id, temperature, humidity, payload))
                 {
-                    client.publish("home/room1/device1/data", payload, 1);
-                    ESP_LOGI(TAG, "sample report (simulated): %s", payload.c_str());
+                    client.publish("home/room1/device" + std::to_string(device_id) + "/data", payload, 1);
+                    ESP_LOGI(TAG, "sample report (simulated)");
                     last_report = now;
                     report_sent = true;
                 }

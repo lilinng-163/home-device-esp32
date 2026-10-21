@@ -1,0 +1,15 @@
+{
+    "wifi": {
+        "ssid": "YOUR_WIFI_SSID",
+        "pass": "YOUR_WIFI_PASSWORD"
+    },
+    "mqtt": {
+        "host": "mqtt.example.com",
+        "port": 1883,
+        "client_id": "home-device-esp32-1",
+        "username": "YOUR_MQTT_USERNAME",
+        "password": "YOUR_MQTT_PASSWORD"
+    },
+    "publish": ["home/room1/device1/data"],
+    "subscribe": ["home/room1/device1/cmd"]
+}

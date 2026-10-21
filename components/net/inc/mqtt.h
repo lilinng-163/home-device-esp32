@@ -8,12 +8,16 @@
 #include <esp_event.h>
 #include <mqtt_client.h>
 
+#include <cJSON.h>
+
 using mqtt_cb_t = void (*)(void *ctx, esp_event_base_t, int32_t, void *);
 using msg_cb_t = void (*)(void *user, const char *topic, const char *payload); // 消息回调
+// 应用层校验外层后传入 data；回调只借用，不负责释放。
+using handle_json_t = int(*)(const cJSON *data);
 
 class mqtt
 {
-  public:
+public:
     void easy_start(esp_mqtt_client_config_t &cfg);
     void init(esp_mqtt_client_config_t &cfg, mqtt_cb_t cb = nullptr);
     void start(void);
@@ -23,6 +27,8 @@ class mqtt
 
     // 外部想换事件回调就传指针（不传 ctx 则用 this 当上下文）
     void set_event_cb(mqtt_cb_t cb, void *ctx = nullptr);
+
+    handle_json_t handle_json_ = nullptr;
 
     // 上层注册“收到消息怎么办”，mqtt 只管把消息转发出去
     void set_msg_cb(msg_cb_t cb, void *user)
@@ -45,7 +51,7 @@ class mqtt
     }
     void forward_message(const char *topic, int tlen, const char *data, int dlen);
 
-  private:
+private:
     void resubscribe_all(void); // 连上后把集合里的主题全部补订
 
     esp_mqtt_client_config_t cfg_;

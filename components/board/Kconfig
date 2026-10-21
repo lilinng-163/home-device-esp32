@@ -12,6 +12,9 @@ menu "Board"
         bool "Enable i2s"
         default y
 
+    config BOARD_LED1
+        int "Red led"
+        default 1
     config BOARD_KEY
         bool "Enable key"
         default y

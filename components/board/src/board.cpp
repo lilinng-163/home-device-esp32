@@ -10,6 +10,7 @@
 #include "io_ex.h"
 #include "key.h"
 #include "codec.h"
+#include "led.h"
 
 const board_t &board()
 {
@@ -25,6 +26,7 @@ const board_t &board()
         CONFIG_BOARD_LCD_CS,              // lcd_cs
         CONFIG_BOARD_LCD_DC,              // lcd_dc
         CONFIG_BOARD_KEY_GPIO,            // key_gpio
+        CONFIG_BOARD_LED1,
         CONFIG_BOARD_ES8388_I2C_SCL,      // es8388_i2c_scl
         CONFIG_BOARD_ES8388_I2C_SDA,      // es8388_i2c_sda
         CONFIG_BOARD_ES8388_I2S_MCLK,     // es8388_mclk
@@ -42,6 +44,7 @@ static xl9555 s_ioex;
 static lcd    s_lcd;
 static key    s_key;
 static codec  s_codec;
+static led    s_led1;
 
 void board_init()
 {
@@ -99,6 +102,13 @@ void board_init()
     kc.pin_bit_mask = (1ULL << b.key_gpio);
     kc.pull_up_en = GPIO_PULLUP_ENABLE;
     s_key.init((gpio_num_t)b.key_gpio, kc);
+
+    // 8) led
+    gpio_config_t ledc = {};
+    ledc.mode = GPIO_MODE_OUTPUT_OD;
+    ledc.pin_bit_mask = (1ULL << b.led1_gpio);
+    ledc.pull_up_en = GPIO_PULLUP_ENABLE;
+    s_led1.init((gpio_num_t)b.led1_gpio, ledc);
 #endif
 }
 
@@ -106,3 +116,4 @@ lcd    &board_lcd()  { return s_lcd;  }
 io_ex  &board_ioex() { return s_ioex; }
 key    &board_key()  { return s_key;  }
 codec  &board_codec(){ return s_codec; }
+led    &board_led1()  { return s_led1;  }

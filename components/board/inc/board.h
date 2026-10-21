@@ -4,6 +4,7 @@ class lcd;
 class io_ex;
 class key;
 class codec;
+class led;
 
 struct board_t
 {
@@ -21,6 +22,7 @@ struct board_t
     int lcd_dc;
 
     int key_gpio;
+    int led1_gpio;
 
     // ES8388 音频
     int es8388_i2c_scl;
@@ -42,3 +44,4 @@ lcd    &board_lcd();
 io_ex  &board_ioex();
 key    &board_key();
 codec  &board_codec();
+led    &board_led1();

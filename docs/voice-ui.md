@@ -14,12 +14,9 @@
 
 ## MQTT
 
-默认 broker 为 `mqtt://162.14.72.194:1883`。1883 是 EMQX 的默认 MQTT TCP 端口，
-Docker 需将该端口映射到宿主机：[EMQX 官方安装说明](https://docs.emqx.com/en/emqx/latest/get-started/deploy/install-docker.html)。
-
-NVS 中原来的示例地址 `47.113.149.47` 会迁移到新地址，缺失地址或非法端口使用默认值。
-网页回显同步为生效配置；其他自行保存的 broker 地址、认证信息和主题仍保留，配网页可修改。
-本次只配置 broker，MQTT 收到消息后的业务逻辑沿用现有实现。
+MQTT 主机、端口和认证信息通过配网页配置，使用自己部署的 broker。
+公开示例为 `mqtt.example.com:1883`；已有 NVS 配置仍优先使用。
+报文格式见 [设备 MQTT 报文](device_message.md)，接收和发送日志均打印主题与 payload。
 
 ## 线程和资源
 
@@ -54,7 +51,7 @@ Pop-Location
 
 ## 本次验证（2026-10-19）
 
-ESP-IDF 6.1 专用虚拟环境编译通过，生成 `build/prj_esp32.bin`，大小 `0x251aa0` 字节，
+ESP-IDF 6.1 专用虚拟环境编译通过，生成 `build/home-device-esp32.bin`，大小 `0x251aa0` 字节，
 当前 `0x280000` 应用分区剩余约 185 KiB（7%）。
 主机运行上述八种实际 LVGL 场景，确认中文显示、页面切换和控件布局。
 经 Serial Workbench MCP 确认 COM8 后烧录，固件哈希校验通过，工作台已恢复串口连接。

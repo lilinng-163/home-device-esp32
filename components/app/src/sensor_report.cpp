@@ -1,4 +1,5 @@
 #include "sensor_report.h"
+#include "device_message.h"
 
 #include <cmath>
 
@@ -13,29 +14,16 @@ bool make_sensor_report(int device_id, double temperature, double humidity, std:
         return false;
     }
 
-    cJSON *root = cJSON_CreateObject();
-    if (root == nullptr)
+    cJSON *data = cJSON_CreateObject();
+    if (data == nullptr)
     {
         return false;
     }
 
-    // 外层描述协议与设备，传感器字段集中放在 data 对象中。
-    bool ready = cJSON_AddStringToObject(root, "version", "0.0.1") != nullptr &&
-                 cJSON_AddNumberToObject(root, "device_id", device_id) != nullptr;
-    cJSON *data = ready ? cJSON_AddObjectToObject(root, "data") : nullptr;
-    ready = data != nullptr &&
-            cJSON_AddNumberToObject(data, "temperature", temperature) != nullptr &&
-            cJSON_AddNumberToObject(data, "humidity", humidity) != nullptr;
-
-    char *text = ready ? cJSON_PrintUnformatted(root) : nullptr;
-    bool success = text != nullptr;
-    if (success)
-    {
-        payload = text;
-    }
-
-    // std::string 已复制正文，及时释放 cJSON 树和序列化缓冲区。
-    cJSON_free(text);
-    cJSON_Delete(root);
+    // 这里只组装传感器数据，公共外层交给统一的报文函数。
+    bool ready = cJSON_AddNumberToObject(data, "temperature", temperature) != nullptr &&
+                 cJSON_AddNumberToObject(data, "humidity", humidity) != nullptr;
+    bool success = ready && make_device_message(device_id, data, payload);
+    cJSON_Delete(data);
     return success;
 }

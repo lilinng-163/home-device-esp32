@@ -10,7 +10,7 @@ struct app_config
     std::string pass;
 
     // EMQX 默认 TCP 监听端口；网页保存的配置仍可覆盖这些缺省值。
-    std::string host = "162.14.72.194";
+    std::string host = "mqtt.example.com";
     int port = 1883;
     std::string client_id;
     std::string username;

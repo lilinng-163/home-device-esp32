@@ -22,13 +22,13 @@ build/
 *.o
 *.a
 *.out
-*.exe # For any host-side utilities compiled on Windows
+*.exe
 
 # ESP-IDF specific build outputs
 *.bin
 *.elf
 *.map
-flasher_args.json # Generated in build directory
+flasher_args.json
 sdkconfig.old
 sdkconfig
 
@@ -73,7 +73,7 @@ Desktop.ini
 
 # User-specific configuration files
 *.user
-*.workspace # General workspace files, can be from various tools
+*.workspace
 *.suo       # Visual Studio Solution User Options
 *.sln.docstates # Visual Studio
 
@@ -86,3 +86,9 @@ skills-lock.json
 
 # 本地密钥（不提交）
 secrets.h
+components/net/prvtkey.pem
+components/net/servercert.pem
+
+# 本地助手说明与工具日志
+DEEPSEEK.md
+AGENTS.md

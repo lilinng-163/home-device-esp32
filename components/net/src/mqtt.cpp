@@ -80,6 +80,8 @@ void mqtt::forward_message(const char *topic, int tlen, const char *data, int dl
 
     std::string t(topic, tlen);
     std::string p(data, dlen);
+    // 在解析前记录原始正文，便于与服务端对照。
+    ESP_LOGI(TAG, "RX topic=%s payload=%s", t.c_str(), p.c_str());
     msg_cb_(msg_user_, t.c_str(), p.c_str());
 }
 
@@ -160,6 +162,11 @@ void mqtt::publish(const std::string &topic, const std::string &payload, int qos
     auto ret = esp_mqtt_client_publish(handle_, topic.c_str(), payload.c_str(), payload.size(), qos, 0);
     if (ret < 0)
     {
-        ESP_LOGE(TAG, "publish fail");
+        ESP_LOGE(TAG, "TX failed topic=%s payload=%s", topic.c_str(), payload.c_str());
+    }
+    else
+    {
+        // 这里只表示本次发布调用成功，送达确认仍看 MQTT_EVENT_PUBLISHED。
+        ESP_LOGI(TAG, "TX topic=%s payload=%s", topic.c_str(), payload.c_str());
     }
 }

@@ -1,4 +1,5 @@
 set(src src/mqtt_custom.cpp
+    src/device_message.cpp
     src/sensor_report.cpp
     src/nvs_config.cpp
     src/cloud_xfei_proc.cpp

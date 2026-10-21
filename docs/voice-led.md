@@ -4,7 +4,7 @@
 
 ## 配置
 
-1. 复制 `main/secrets.h.example` 为 `main/secrets.h`，填讯飞和 DeepSeek 凭据。
+1. 复制 `config/secrets.h.example` 为 `main/secrets.h`，填讯飞和 DeepSeek 凭据。
 2. `idf.py menuconfig` → `App`：
    - `APP_LED_GPIO`：默认 `1`（板载红灯，`-1` 关闭）
    - `APP_LED_ACTIVE_LOW`：默认 `y`（低电平亮）

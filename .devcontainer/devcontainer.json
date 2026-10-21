@@ -1,5 +1,5 @@
 {
-	"name": "ESP-IDF QEMU",
+	"name": "home-device-esp32",
 	"build": {
 		"dockerfile": "Dockerfile"
 	},
